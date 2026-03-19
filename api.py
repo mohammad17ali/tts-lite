@@ -172,7 +172,7 @@ async def generate_tts_stream(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/tts/generate-json")
+@app.post("/tts/generate")
 async def generate_tts_json(request: TTSRequest):
     """
     Generate speech from JSON request body and save to file.
