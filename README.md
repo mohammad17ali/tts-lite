@@ -63,14 +63,14 @@ Using curl:
 curl "http://localhost:8800/tts/generate?text=Hello+world" -o output.wav
 
 # Using JSON
-curl -X POST http://localhost:8800/tts/generate-json \
+curl -X POST http://localhost:8800/tts/generate \
   -H "Content-Type: application/json" \
   -d '{"text": "This is the Kokoro model being hosted on Intel AIPC. Welcome to new possibilities.", "voice": "af_heart", "lang_code": "a"}'
 ```
 Hindi
 ```bash
 
-curl -X POST http://localhost:8800/tts/generate-json \
+curl -X POST http://localhost:8800/tts/generate \
   -H "Content-Type: application/json" \
   -d '{"text": "यह Kokoro एक छोटा सा TTS (Text-to-Speech) मॉडल है, जिसमें केवल 82 मिलियन पैरामीटर्स हैं। इसके बावजूद, यह बड़े मॉडलों के बराबर क्वालिटी देता है, और बहुत तेज़ी से तथा कम खर्च में काम करता है।", "voice": "hf_alpha", "lang_code": "h"}'
 ```
