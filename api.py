@@ -96,45 +96,45 @@ async def health_check():
     }
 
 
-@app.post("/tts/generate", response_class=FileResponse)
-async def generate_tts(
-    text: str = Query(..., description="Text to convert to speech"),
-    voice: str = Query("af_heart", description="Voice identifier"),
-    lang_code: str = Query("a", description="Language code")
-):
-    """
-    Generate speech from text and return .wav file.
+# @app.post("/tts/generate", response_class=FileResponse)
+# async def generate_tts(
+#     text: str = Query(..., description="Text to convert to speech"),
+#     voice: str = Query("af_heart", description="Voice identifier"),
+#     lang_code: str = Query("a", description="Language code")
+# ):
+#     """
+#     Generate speech from text and return .wav file.
     
-    Query Parameters:
-    - text: Text to convert to speech (required)
-    - voice: Voice identifier (default: af_heart)
-    - lang_code: Language code (default: a)
+#     Query Parameters:
+#     - text: Text to convert to speech (required)
+#     - voice: Voice identifier (default: af_heart)
+#     - lang_code: Language code (default: a)
     
-    Returns:
-        WAV audio file
-    """
-    try:
-        if not text or len(text.strip()) == 0:
-            raise HTTPException(status_code=400, detail="Text cannot be empty")
+#     Returns:
+#         WAV audio file
+#     """
+#     try:
+#         if not text or len(text.strip()) == 0:
+#             raise HTTPException(status_code=400, detail="Text cannot be empty")
         
-        # Generate audio bytes
-        audio_bytes = generate_speech_bytes(text, voice, lang_code)
+#         # Generate audio bytes
+#         audio_bytes = generate_speech_bytes(text, voice, lang_code)
         
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
+#         # Create temporary file
+#         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
+#             tmp.write(audio_bytes)
+#             tmp_path = tmp.name
         
-        return FileResponse(
-            tmp_path,
-            media_type="audio/wav",
-            filename="output.wav",
-            headers={"Content-Disposition": "attachment; filename=output.wav"}
-        )
+#         return FileResponse(
+#             tmp_path,
+#             media_type="audio/wav",
+#             filename="output.wav",
+#             headers={"Content-Disposition": "attachment; filename=output.wav"}
+#         )
     
-    except Exception as e:
-        print(f"Error generating speech: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+#     except Exception as e:
+#         print(f"Error generating speech: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/tts/generate-stream", response_class=StreamingResponse)
