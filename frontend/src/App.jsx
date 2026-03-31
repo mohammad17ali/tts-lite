@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 
 const API_BASE = 'http://localhost:8800'
@@ -57,8 +57,12 @@ function voiceLabel(v) {
   return parts.join(' ')
 }
 
+function truncate(str, len = 48) {
+  return str.length > len ? str.slice(0, len) + '…' : str
+}
+
 function App() {
-  const [healthStatus, setHealthStatus] = useState('checking') // checking | ok | error
+  const [healthStatus, setHealthStatus] = useState('checking')
   const [text, setText] = useState('')
   const [language, setLanguage] = useState('en')
   const [voice, setVoice] = useState('af_heart')
@@ -67,34 +71,46 @@ function App() {
   const [audioUrl, setAudioUrl] = useState(null)
   const [audioFilename, setAudioFilename] = useState('')
   const [error, setError] = useState('')
+  const [tasks, setTasks] = useState([])
+  const [selectedTask, setSelectedTask] = useState(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const abortRef = useRef(null)
 
+  // ---- Health check ----
   const checkHealth = async () => {
     setHealthStatus('checking')
     try {
       const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(10000) })
-      if (res.ok) {
-        setHealthStatus('ok')
-      } else {
-        setHealthStatus('error')
-      }
+      setHealthStatus(res.ok ? 'ok' : 'error')
     } catch {
       setHealthStatus('error')
     }
   }
 
-  useEffect(() => {
-    checkHealth()
+  // ---- Load tasks from backend ----
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/tts/tasks`)
+      if (res.ok) {
+        const data = await res.json()
+        setTasks(data.tasks || [])
+      }
+    } catch { /* silent */ }
   }, [])
+
+  useEffect(() => { checkHealth() }, [])
+
+  useEffect(() => {
+    if (healthStatus === 'ok') fetchTasks()
+  }, [healthStatus, fetchTasks])
 
   // Reset voice when language changes
   useEffect(() => {
     const voices = VOICES[language]
-    if (voices && voices.length > 0) {
-      setVoice(voices[0].id)
-    }
+    if (voices?.length) setVoice(voices[0].id)
   }, [language])
 
+  // ---- Generate speech ----
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!text.trim()) return
@@ -102,6 +118,7 @@ function App() {
     setError('')
     setAudioUrl(null)
     setAudioFilename('')
+    setSelectedTask(null)
     setLoading(true)
     setLoadingMsg('Generating speech…')
 
@@ -117,7 +134,6 @@ function App() {
         body: JSON.stringify({ text: text.trim(), voice, lang_code: langCode }),
         signal: controller.signal,
       })
-
       clearTimeout(timeout)
 
       if (!res.ok) {
@@ -128,7 +144,6 @@ function App() {
       const data = await res.json()
       const fileName = data.file_name
 
-      // Now fetch the audio file
       setLoadingMsg('Fetching audio file…')
       const audioRes = await fetch(`${API_BASE}/tts/files/${encodeURIComponent(fileName)}`)
       if (!audioRes.ok) throw new Error('Failed to fetch the generated audio file')
@@ -137,6 +152,9 @@ function App() {
       const url = URL.createObjectURL(blob)
       setAudioUrl(url)
       setAudioFilename(fileName)
+
+      // Refresh task list
+      await fetchTasks()
     } catch (err) {
       if (err.name === 'AbortError') {
         setError('Request timed out (2 minutes). Please try with shorter text.')
@@ -150,29 +168,51 @@ function App() {
     }
   }
 
+  // ---- Load a past task ----
+  const handleTaskClick = async (task) => {
+    setSelectedTask(task.task_number)
+    setText(task.text)
+    setError('')
+    if (audioUrl) URL.revokeObjectURL(audioUrl)
+    setAudioUrl(null)
+    setAudioFilename('')
+
+    try {
+      const audioRes = await fetch(`${API_BASE}/tts/files/${encodeURIComponent(task.file_name)}`)
+      if (!audioRes.ok) {
+        setError('Audio file no longer available')
+        return
+      }
+      const blob = await audioRes.blob()
+      setAudioUrl(URL.createObjectURL(blob))
+      setAudioFilename(task.file_name)
+    } catch {
+      setError('Failed to load audio for this task')
+    }
+  }
+
   const handleReset = () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl)
     setAudioUrl(null)
     setAudioFilename('')
+    setSelectedTask(null)
     setError('')
   }
 
-  // ---- Render states ----
-
+  // ---- Render: health check spinner ----
   if (healthStatus === 'checking') {
     return (
-      <div className="app-wrapper">
-        <div className="loading-container">
-          <div className="spinner" />
-          <p>Connecting to TTS service…</p>
-        </div>
+      <div className="fullscreen-center">
+        <div className="spinner" />
+        <p className="loading-text">Connecting to TTS service…</p>
       </div>
     )
   }
 
+  // ---- Render: health error ----
   if (healthStatus === 'error') {
     return (
-      <div className="app-wrapper">
+      <div className="fullscreen-center">
         <div className="health-error">
           <div className="health-error-icon">⚠</div>
           <h2>Service Unavailable</h2>
@@ -183,82 +223,112 @@ function App() {
     )
   }
 
+  // ---- Render: main app ----
   const voices = VOICES[language] || []
 
   return (
-    <div className="app-wrapper">
-      <header className="app-header">
-        <h1>Kokoro TTS</h1>
-        <p>Generate natural speech from text using Kokoro-82M</p>
+    <div className="app-shell">
+      {/* ---- Top bar ---- */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen((o) => !o)} title="Toggle sidebar">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect y="3" width="20" height="2" rx="1" fill="currentColor"/><rect y="9" width="20" height="2" rx="1" fill="currentColor"/><rect y="15" width="20" height="2" rx="1" fill="currentColor"/></svg>
+          </button>
+          <span className="topbar-brand">intel tinyspeech</span>
+        </div>
+        <span className="topbar-tagline">Text-to-Speech &middot; Kokoro-82M</span>
+        <div className="topbar-status">
+          <span className="status-dot" />
+          <span>Connected</span>
+        </div>
       </header>
 
-      <div className="tts-card">
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="tts-text">Text</label>
-            <textarea
-              id="tts-text"
-              placeholder="Enter text to convert to speech…"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              disabled={loading}
-            />
+      <div className="app-body">
+        {/* ---- Sidebar ---- */}
+        <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
+          <div className="sidebar-header">
+            <h2>History</h2>
+            <span className="task-count">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>
           </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="tts-lang">Language</label>
-              <select
-                id="tts-lang"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                disabled={loading}
+          <div className="sidebar-list">
+            {tasks.length === 0 && (
+              <p className="sidebar-empty">No tasks yet. Generate your first speech!</p>
+            )}
+            {[...tasks].reverse().map((t) => (
+              <button
+                key={t.task_number}
+                className={`task-item ${selectedTask === t.task_number ? 'active' : ''}`}
+                onClick={() => handleTaskClick(t)}
               >
-                {LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>{l.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="tts-voice">Voice</label>
-              <select
-                id="tts-voice"
-                value={voice}
-                onChange={(e) => setVoice(e.target.value)}
-                disabled={loading}
-              >
-                {voices.map((v) => (
-                  <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
-                ))}
-              </select>
-            </div>
+                <span className="task-number">Task {t.task_number}</span>
+                <span className="task-voice">{t.voice}</span>
+                <span className="task-preview">{truncate(t.text, 52)}</span>
+              </button>
+            ))}
           </div>
+        </aside>
 
-          <button type="submit" className="submit-btn" disabled={loading || !text.trim()}>
-            {loading ? 'Generating…' : 'Generate Speech'}
-          </button>
-        </form>
+        {/* ---- Main content ---- */}
+        <main className="main-content">
+          <div className="tts-card">
+            <h2 className="card-title">Generate Speech</h2>
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label htmlFor="tts-text">Text</label>
+                <textarea
+                  id="tts-text"
+                  placeholder="Enter text to convert to speech…"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
 
-        {loading && (
-          <div className="loading-container">
-            <div className="spinner" />
-            <p>{loadingMsg}</p>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="tts-lang">Language</label>
+                  <select id="tts-lang" value={language} onChange={(e) => setLanguage(e.target.value)} disabled={loading}>
+                    {LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="tts-voice">Voice</label>
+                  <select id="tts-voice" value={voice} onChange={(e) => setVoice(e.target.value)} disabled={loading}>
+                    {voices.map((v) => (
+                      <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" className="submit-btn" disabled={loading || !text.trim()}>
+                {loading ? 'Generating…' : 'Generate Speech'}
+              </button>
+            </form>
+
+            {loading && (
+              <div className="inline-loading">
+                <div className="spinner small" />
+                <p>{loadingMsg}</p>
+              </div>
+            )}
+
+            {error && <div className="error-msg">{error}</div>}
+
+            {audioUrl && (
+              <div className="audio-section">
+                <h3>Generated Audio</h3>
+                <div className="audio-player-box">
+                  <audio controls src={audioUrl} />
+                  <span className="audio-filename">{audioFilename}</span>
+                </div>
+                <button className="new-btn" onClick={handleReset}>Generate Another</button>
+              </div>
+            )}
           </div>
-        )}
-
-        {error && <div className="error-msg">{error}</div>}
-
-        {audioUrl && (
-          <div className="audio-section">
-            <h3>Generated Audio</h3>
-            <div className="audio-player-box">
-              <audio controls src={audioUrl} />
-              <span className="audio-filename">{audioFilename}</span>
-            </div>
-            <button className="new-btn" onClick={handleReset}>Generate Another</button>
-          </div>
-        )}
+        </main>
       </div>
     </div>
   )

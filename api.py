@@ -10,8 +10,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 import hashlib
+import json
 import tempfile
 import os
+from datetime import datetime
 from pathlib import Path
 import numpy as np
 from kokoro import KPipeline
@@ -51,6 +53,40 @@ app.add_middleware(
 
 # Global pipeline (cached)
 pipeline_cache = {}
+
+# JSON database path
+DB_PATH = Path("tts_db.json")
+
+
+def load_db() -> dict:
+    """Load the task database from JSON file."""
+    if DB_PATH.exists():
+        with open(DB_PATH, "r") as f:
+            return json.load(f)
+    return {"tasks": []}
+
+
+def save_db(db: dict) -> None:
+    """Save the task database to JSON file."""
+    with open(DB_PATH, "w") as f:
+        json.dump(db, f, indent=2)
+
+
+def add_task(text: str, voice: str, lang_code: str, file_name: str) -> dict:
+    """Add a new task entry to the database and return it."""
+    db = load_db()
+    task_number = len(db["tasks"]) + 1
+    task = {
+        "task_number": task_number,
+        "text": text,
+        "voice": voice,
+        "lang_code": lang_code,
+        "file_name": file_name,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+    }
+    db["tasks"].append(task)
+    save_db(db)
+    return task
 
 
 def deterministic_filename(text: str, voice: str, lang_code: str) -> str:
@@ -231,16 +267,27 @@ async def generate_tts_json(request: TTSRequest):
         combined_audio = np.concatenate(audio_chunks)
         sf.write(str(output_path), combined_audio, 24000)
         
+        # Persist to JSON database
+        task = add_task(request.text, request.voice, request.lang_code, filename)
+        
         return {
             "status": "success",
             "message": "Speech generated successfully",
             "output_file": str(output_path),
-            "file_name": filename
+            "file_name": filename,
+            "task_number": task["task_number"]
         }
     
     except Exception as e:
         print(f"Error generating speech: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tts/tasks")
+async def list_tasks():
+    """Return all tasks from the JSON database."""
+    db = load_db()
+    return {"tasks": db["tasks"]}
 
 
 @app.get("/tts/files/{filename}")
