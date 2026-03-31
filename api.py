@@ -5,9 +5,11 @@ Exposes endpoints to generate speech from text and return .wav files.
 """
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
+import hashlib
 import tempfile
 import os
 from pathlib import Path
@@ -39,8 +41,23 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8801"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global pipeline (cached)
 pipeline_cache = {}
+
+
+def deterministic_filename(text: str, voice: str, lang_code: str) -> str:
+    """Generate a deterministic filename from request params using SHA-256."""
+    payload = f"{text}|{voice}|{lang_code}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    return f"tts_{digest}.wav"
 
 
 def get_pipeline(lang_code='a'):
@@ -195,9 +212,8 @@ async def generate_tts_json(request: TTSRequest):
         output_dir = Path("tts_outputs")
         output_dir.mkdir(exist_ok=True)
         
-        # Generate unique filename
-        import uuid
-        filename = f"tts_{uuid.uuid4()}.wav"
+        # Generate deterministic filename
+        filename = deterministic_filename(request.text, request.voice, request.lang_code)
         output_path = output_dir / filename
         
         # Generate audio
@@ -225,6 +241,22 @@ async def generate_tts_json(request: TTSRequest):
     except Exception as e:
         print(f"Error generating speech: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tts/files/{filename}")
+async def get_tts_file(filename: str):
+    """Serve a generated .wav file from tts_outputs directory."""
+    # Sanitize: only allow alphanumeric, underscores, hyphens, and .wav extension
+    if not filename.endswith(".wav") or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    file_path = Path("tts_outputs") / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        str(file_path),
+        media_type="audio/wav",
+        filename=filename,
+    )
 
 
 @app.get("/")
