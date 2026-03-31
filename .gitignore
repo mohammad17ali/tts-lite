@@ -1,5 +1,13 @@
-#local processing data
-tts_outputs
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Runtime data
+tts_outputs/
 tts_db.json
 
-__pycache__
+# Frontend
+frontend/node_modules/
+frontend/dist/
