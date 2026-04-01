@@ -108,3 +108,35 @@ uv pip install -r requirements.txt
 - **text**: Text to convert to speech (required)
 - **voice**: Voice identifier (default: `af_heart`)
 - **lang_code**: Language code (default: `a`) 
+
+## Benchmarking
+
+A benchmarking script is provided in the `benchmarks/` directory to measure TTS latency.
+
+### How it works
+1. **Warm-up**: A single request is sent first (not recorded) to ensure the model for the target language is downloaded and loaded.
+2. **Recorded passes**: Each query is then sent **twice** (two passes), and latency is recorded for every request.
+3. **Results**: Saved as a timestamped CSV file in `benchmarks/` (e.g. `benchmark_english_20260401_120000.csv`).
+
+The CSV records: `pass`, `query_index`, `text`, `text_length`, `voice`, `lang_code`, `latency_s`, `status`, `output_file`, `file_name`.
+
+### Supported languages
+- `english` (default) — voice: `af_heart`, lang_code: `a`
+- `hindi` — voice: `hf_alpha`, lang_code: `h`
+
+Queries for each language are defined in `benchmarks/queries.py`.
+
+### Usage
+
+```bash
+# Benchmark English (default)
+python benchmarks/benchmark.py
+
+# Benchmark Hindi
+python benchmarks/benchmark.py --lang hindi
+
+# Benchmark English (explicit)
+python benchmarks/benchmark.py --lang english
+```
+
+You can override the backend URL with the `TTS_BASE_URL` environment variable (default: `http://localhost:8800`).

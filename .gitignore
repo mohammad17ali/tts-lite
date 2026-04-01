@@ -8,6 +8,12 @@ __pycache__/
 tts_outputs/
 tts_db.json
 
+# OpenVINO converted models
+Kokoro-82M/
+
+# Benchmark results
+benchmarks/*.csv
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
